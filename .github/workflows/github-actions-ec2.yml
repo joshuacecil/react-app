@@ -1,0 +1,67 @@
+name: Push-to-EC2
+
+# Trigger deployment only on push to main branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to EC2 on master branch push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the files
+        uses: actions/checkout@v2
+
+      - name: Deploy to Server 1
+        uses: easingthemes/ssh-deploy@main
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.HOST_DNS }}
+          REMOTE_USER: ${{ secrets.USERNAME }}
+          TARGET: ${{ secrets.TARGET_DIR }}
+
+      - name: Executing remote ssh commands using ssh key
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST_DNS }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+          sudo apt-get update -y
+          sudo apt install npm -y
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          echo installing node
+          sudo apt install -y nodejs
+          echo installing nginx
+          sudo apt install nginx -y
+          sudo mkdir /var/www/html/my-react-app
+          
+          cd /etc/nginx/conf.d
+          sudo touch react.conf
+          sudo chmod 666 /etc/nginx/conf.d/react.conf
+          sudo echo 'server {
+            listen 80;
+            listen [::]:80;
+            root /var/www/html/my-react-app/build;
+          
+            #react app
+            location / { 
+              try_files $uri /index.html;
+            }
+          }' >> react.conf
+          
+          cd /home/ubuntu
+          mkdir my-app
+          cd my-app
+          git clone https://github.com/joshuacecil/react-app.git
+          cd react-app
+          sudo apt install npm
+          npm i react-scripts
+          npm install
+          npm run build
+          sudo cp -R build/ /var/www/html/my-react-app/
+          sudo sed -i '60s/^/#/' /etc/nginx/nginx.conf
+          sudo nginx -t && sudo systemctl reload nginx
